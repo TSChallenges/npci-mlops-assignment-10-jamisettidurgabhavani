@@ -52,6 +52,17 @@ def train_test_split_churn(
     from sklearn.model_selection import train_test_split
 
     # YOUR CODE HERE to split the dataset into training & testing set and save them as CSV files
+    df = pd.read_csv(input_churn_dataset.path)
+    X = df.drop(columns=["Exited"])
+    y = df["Exited"]
+
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=test_size, random_state=random_state)
+
+    X_tr.to_csv(X_train.path, index=False)
+    X_te.to_csv(X_test.path, index=False)
+    y_tr.to_csv(y_train.path, index=False)
+    y_te.to_csv(y_test.path, index=False)
+
 
 
 
@@ -72,6 +83,15 @@ def train_churn_model(
     import pickle
 
     # YOUR CODE HERE to load train the model on training set, and save the model
+    X = pd.read_csv(X_train.path)
+    y = pd.read_csv(y_train.path).values.ravel()
+
+    model = RandomForestClassifier(n_estimators=n_estimators, random_state=random_state)
+    model.fit(X, y)
+
+    with open(model_output.path, 'wb') as f:
+        pickle.dump(model, f)
+
 
 
 
@@ -91,6 +111,23 @@ def evaluate_churn_model(
     import pickle
 
     # YOUR CODE HERE to check the model performance using different metrics and save them
+    X = pd.read_csv(X_test.path)
+    y_true = pd.read_csv(y_test.path).values.ravel()
+
+    with open(model_path.path, 'rb') as f:
+        model = pickle.load(f)
+
+    y_pred = model.predict(X)
+
+    metrics = {
+        'accuracy': accuracy_score(y_true, y_pred),
+        'precision': precision_score(y_true, y_pred),
+        'recall': recall_score(y_true, y_pred),
+        'f1_score': f1_score(y_true, y_pred),
+    }
+
+    metrics_df = pd.DataFrame([metrics])
+    metrics_df.to_csv(metrics_output.path, index=False)
 
 
 
@@ -103,9 +140,32 @@ def customer_churn_pipeline(
     n_estimators: int = 100,
 ):
     # YOUR CODE HERE to connect the pipeline components and direct their inputs and outputs
+    load_op = load_churn_data(drop_missing_vals=drop_missing_vals)
+
+    split_op = train_test_split_churn(
+        input_churn_dataset=load_op.outputs["churn_dataset"],
+        test_size=test_size,
+        random_state=random_state
+    )
+
+    train_op = train_churn_model(
+        X_train=split_op.outputs["X_train"],
+        y_train=split_op.outputs["y_train"],
+        n_estimators=n_estimators,
+        random_state=random_state
+    )
+
+    eval_op = evaluate_churn_model(
+        X_test=split_op.outputs["X_test"],
+        y_test=split_op.outputs["y_test"],
+        model_path=train_op.outputs["model_output"]
+    )
+
 
 
 
 # Compile Pipeline
 if __name__ == '__main__':
     kfp.compiler.Compiler().compile(customer_churn_pipeline, 'customer_churn_pipeline_v1.yaml')
+
+
